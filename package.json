@@ -1,0 +1,19 @@
+{
+  "name": "stellar-tests",
+  "version": "1.0.0",
+  "main": "dist/main.js",
+  "author": "coderipper",
+  "license": "MIT",
+  "scripts": {
+    "restore": "ts-node src/restoreKey.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.0.0",
+    "soroban-toolkit": "^0.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.6.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}
