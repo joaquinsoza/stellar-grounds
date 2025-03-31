@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^13.0.0",
+    "dotenv": "^16.4.7",
     "soroban-toolkit": "^0.1.2"
   },
   "devDependencies": {
