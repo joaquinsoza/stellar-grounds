@@ -22,6 +22,30 @@ interface LoginResponse {
 let accessToken: string;
 let counter = 0;
 
+// Asset pool for fuzzing
+const ASSET_IDS = [
+  "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  // Add more asset IDs as needed
+];
+
+function getRandomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getRandomTradeType(): "EXACT_IN" | "EXACT_OUT" {
+  return Math.random() < 0.5 ? "EXACT_IN" : "EXACT_OUT";
+}
+
+function getRandomAssets(): { assetIn: string, assetOut: string } {
+  let idx1 = getRandomInt(0, ASSET_IDS.length - 1);
+  let idx2;
+  do {
+    idx2 = getRandomInt(0, ASSET_IDS.length - 1);
+  } while (idx2 === idx1);
+  return { assetIn: ASSET_IDS[idx1], assetOut: ASSET_IDS[idx2] };
+}
+
 async function login(email: string, password: string): Promise<string> {
   if (accessToken) {
     return accessToken;
@@ -47,7 +71,15 @@ async function login(email: string, password: string): Promise<string> {
   return accessToken;
 }
 
-async function performSwap(email: string, password: string, stellarWallet: Keypair) {
+async function performSwap(
+  email: string,
+  password: string,
+  stellarWallet: Keypair,
+  assetIn: string,
+  assetOut: string,
+  amount: string,
+  tradeType: "EXACT_IN" | "EXACT_OUT"
+) {
   try {
     // First get the access token
     const accessToken = await login(email, password);
@@ -55,19 +87,18 @@ async function performSwap(email: string, password: string, stellarWallet: Keypa
 
     console.log("Wallet:", stellarWallet.publicKey());
 
-    // First API call to /router/swap
+    // Fuzzed API call to /router/swap
     const swapRequest: SwapRequest = {
-      assetIn: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-      assetOut: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-      amount: "10000000000000",
-      tradeType: "EXACT_IN",
+      assetIn,
+      assetOut,
+      amount,
+      tradeType,
       protocols: ["soroswap", "phoenix", "aqua"],
       parts: 10,
       slippageTolerance: "100",
       maxHops: 1,
       assetList: ["soroswap"]
     }
-
 
     const swapResponse = await fetch("http://localhost:4000/router/swap/split?network=mainnet", {
       method: "POST",
@@ -86,7 +117,6 @@ async function performSwap(email: string, password: string, stellarWallet: Keypa
 
     console.log("Swap Response:", swapData.trade.distribution);
 
-    
   } catch (error) {
     console.error("Error:", error);
   }
@@ -96,16 +126,21 @@ async function main() {
   const email = "dev@paltalabs.io";
   const password = "superuserpass";
   const stellarWallet = Keypair.fromSecret(process.env.STELLAR_SECRET_KEY as string);
-  // Execute the function
+
+  // Fuzzing: randomize assetIn, assetOut, amount, and tradeType
+  const { assetIn, assetOut } = getRandomAssets();
+  const amount = getRandomInt(10000000, 1000000000000000).toString();
+  const tradeType = getRandomTradeType();
 
   console.log("Number of retries", counter);
-  console.log("=========================================================")
-  await performSwap(email, password, stellarWallet);
+  console.log("=========================================================");
+  console.log(`assetIn: ${assetIn}, assetOut: ${assetOut}, amount: ${amount}, tradeType: ${tradeType}`);
+  await performSwap(email, password, stellarWallet, assetIn, assetOut, amount, tradeType);
   counter++;
-  console.log("=========================================================")
+  console.log("=========================================================");
 }
 
-const INTERVAL_MS = 1000; // 10 seconds
+const INTERVAL_MS = 2000; // 10 seconds
 
 function startCountdown(intervalMs: number) {
   let remainingSeconds = Math.floor(intervalMs / 1000);
