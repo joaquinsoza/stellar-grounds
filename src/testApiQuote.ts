@@ -14,6 +14,7 @@ interface SwapRequest {
     assetList?: string[];
     to?: string;
     from?: string;
+    feeBps?: number;
 }
 
 interface LoginResponse {
@@ -49,35 +50,18 @@ async function performSwap(email: string, password: string) {
 
         console.log("Wallet:", stellarWallet.publicKey());
 
-        // First API call to /router/swap
-        // const swapRequest: SwapRequest = {
-        //     "assetIn": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-        //     "assetOut": "CBLLEW7HD2RWATVSMLAGWM4G3WCHSHDJ25ALP4DI6LULV5TU35N2CIZA",
-        //     "amount": "40000000",
-        //     "tradeType": "EXACT_IN",
-        //     "protocols": ["soroswap", "phoenix", "aqua"],
-        //     "parts": 10,
-        //     "maxHops": 1,
-        //     "slippageTolerance": "50",
-        //     "assetList": ["soroswap"],
-        //     "to": stellarWallet.publicKey(),
-        //     "from": stellarWallet.publicKey()
-        //   }
-    
-
         const swapRequest: SwapRequest = {
             "assetIn": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75", // USDC
             "assetOut": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA", // EURC
-            "amount": "1000000", // 100.0000000 USDC
+            "amount": "10000000", // 100.0000000 USDC
             "tradeType": "EXACT_IN",
             "protocols": ["soroswap", "aqua", "phoenix"], 
             "parts": 10, // Optional, the highest the better but may be slower
             "slippageTolerance": 50, // Optional
             "maxHops": 2, // Optional
-            "assetList": ["soroswap"], // Optional
-            "to": stellarWallet.publicKey(),
-            "from": stellarWallet.publicKey()
-        };
+            "assetList": ["soroswap"],
+            "feeBps": 50
+        }
 
         const swapResponse = await fetch(`${process.env.API_URL}/quote?network=mainnet`, {
             method: 'POST',
@@ -95,28 +79,37 @@ async function performSwap(email: string, password: string) {
         const swapData = await swapResponse.json();
         console.log('Swap Response:', JSON.stringify(swapData, null, 2));
 
-        console.log('XDR:', swapData.xdr);
-
-        // Here we are using the rpc to send the transaction, but after signing we could send it through the /send endpoint
-        // Now it should sign the transaction and send it to the network
-        const server = new rpc.Server(process.env.SOROBAN_RPC as string);
-        
-        const transaction = new Transaction(swapData.xdr, Networks.PUBLIC);
-        
-        const simulationResponse = await server.simulateTransaction(transaction);
-        console.log("🚀 | performSwap | simulationResponse:", simulationResponse)
-
-        if (rpc.Api.isSimulationError(simulationResponse)) {
-            throw Error(`Simulation error`);
+        const buildParams = {
+            quote: swapData, 
+            referralId: stellarWallet.publicKey(),
+            to: stellarWallet.publicKey(), 
+            from: stellarWallet.publicKey()
         }
+        console.log("🚀 | performSwap | buildParams:", buildParams)
         
-        const assembledTransaction = rpc.assembleTransaction(transaction, simulationResponse);
-        const prepped_tx = assembledTransaction.build();
-        prepped_tx.sign(stellarWallet);
+        const buildResponse = await fetch(`${process.env.API_URL}/quote/build?network=mainnet`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(buildParams)
+        });
+
+        if (!buildResponse.ok) {
+            throw new Error(`Swap request failed with status ${buildResponse.status}`);
+        }
+
+        const buildData = await buildResponse.json();
+        console.log('Build Data:', JSON.stringify(buildData, null, 2));
+
+        const transaction = new Transaction(buildData.xdr, Networks.PUBLIC);
         
-        const tx_hash = prepped_tx.hash().toString("hex");
+        transaction.sign(stellarWallet);
+        
+        const tx_hash = transaction.hash().toString("hex");
         console.log("🚀 | performSwap | tx_hash:", tx_hash)
-        console.log({xdr: prepped_tx.toXDR()})
+        console.log({xdr: transaction.toXDR()})
 
         const sendResponse = await fetch(`${process.env.API_URL}/send?network=mainnet`, {
             method: 'POST',
@@ -124,28 +117,9 @@ async function performSwap(email: string, password: string) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${accessToken}`
             },
-            body: JSON.stringify({xdr: prepped_tx.toXDR()})
+            body: JSON.stringify({xdr: transaction.toXDR(), launchtube: false})
         });
         console.log("🚀 | performSwap | sendResponse:", sendResponse)
-
-        // const response = await server.sendTransaction(prepped_tx);
-        // console.log("🚀 | performSwap | response:", response)
-        // const status = response.status;
-        
-        // let txResponse;
-        // while (status === "PENDING") {
-        //     await new Promise((resolve) => setTimeout(resolve, 2000));
-        //     console.log("waiting for tx...");
-        //     txResponse = await server.getTransaction(tx_hash);
-        //     console.log("🚀 | performSwap | txResponse:", txResponse)
-
-        //     if (txResponse.status === "SUCCESS") {
-        //     console.log("Transaction successful");
-        //     break;
-        //     }
-        // }
-        // return txResponse;
-
 
     } catch (error) {
         console.error('Error:', error);
